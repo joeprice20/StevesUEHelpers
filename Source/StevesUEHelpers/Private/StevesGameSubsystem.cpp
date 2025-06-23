@@ -17,6 +17,8 @@
 
 //PRAGMA_DISABLE_OPTIMIZATION
 
+DEFINE_LOG_CATEGORY_STATIC(LogStevesGameSubsystem, Log, All);
+
 void UStevesGameSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
@@ -77,34 +79,75 @@ void UStevesGameSubsystem::NotifyEnhancedInputMappingsChanged()
 
 TSoftObjectPtr<UInputAction> UStevesGameSubsystem::FindEnhancedInputAction(const FString& Name)
 {
+    // Log function entry with the input name we are searching for.
+    UE_LOG(LogStevesGameSubsystem, Log, TEXT("Searching for Enhanced Input Action with Name: '%s'"), *Name);
+
     if (FAssetRegistryModule* AssetRegistryModule = FModuleManager::LoadModulePtr<FAssetRegistryModule>(TEXT("AssetRegistry")))
     {
         IAssetRegistry& AssetRegistry = AssetRegistryModule->Get();
         if (auto Settings = GetDefault<UStevesPluginSettings>())
         {
+            // Log that we successfully loaded the settings and are starting to iterate directories.
+            UE_LOG(LogStevesGameSubsystem, Log, TEXT("Settings loaded. Searching %d directories."), Settings->EnhancedInputActionSearchDirectories.Num());
+
             for (const auto& Dir : Settings->EnhancedInputActionSearchDirectories)
             {
+                // Log each directory we are about to search.
+                UE_LOG(LogStevesGameSubsystem, Log, TEXT("--- Searching Directory: '%s'"), *Dir.Path);
+                
                 if (!FPackageName::IsValidPath(Dir.Path))
                 {
+                    // Log a warning if a configured path is invalid.
+                    UE_LOG(LogStevesGameSubsystem, Warning, TEXT("Skipping invalid search directory path: '%s'"), *Dir.Path);
                     continue;
                 }
 
                 TArray<FAssetData> Assets;
+                // Construct the full potential package name for the asset.
                 FString Package = FPaths::Combine(Dir.Path, Name);
+                UE_LOG(LogStevesGameSubsystem, Log, TEXT("Attempting to find asset at package path: '%s'"), *Package);
+
+                // Check if the AssetRegistry can find anything at that exact package name.
                 if (AssetRegistry.GetAssetsByPackageName(FName(*Package), Assets, true))
                 {
+                    UE_LOG(LogStevesGameSubsystem, Log, TEXT("Found %d asset(s) with package name '%s'"), Assets.Num(), *Package);
                     for (const FAssetData& Asset : Assets)
                     {
+                        // Check if the found asset is of the correct class.
                         if (Asset.GetClass() == UInputAction::StaticClass())
                         {
+                            // Success! Log the find and return the path.
+                            UE_LOG(LogStevesGameSubsystem, Log, TEXT("SUCCESS: Found matching UInputAction asset: '%s'"), *Asset.GetObjectPathString());
                             return TSoftObjectPtr<UInputAction>(Asset.GetSoftObjectPath());
+                        }
+                        else
+                        {
+                            // Log if an asset was found but it's the wrong type. This is a key debug clue.
+                            UE_LOG(LogStevesGameSubsystem, Warning, TEXT("Asset found at path '%s', but it is not a UInputAction. It is a '%s'."), *Package, *Asset.GetClass()->GetName());
                         }
                     }
                 }
-
+                else
+                {
+                    // Log when no assets are found for a given package name. This is normal, but good to see.
+                    UE_LOG(LogStevesGameSubsystem, Log, TEXT("No assets found for package name '%s'"), *Package);
+                }
             }
         }
+        else
+        {
+            // Log an error if the plugin settings can't be loaded.
+            UE_LOG(LogStevesGameSubsystem, Error, TEXT("Could not get default UStevesPluginSettings!"));
+        }
     }
+    else
+    {
+        // Log an error if the AssetRegistry module can't be loaded.
+        UE_LOG(LogStevesGameSubsystem, Error, TEXT("Failed to load AssetRegistryModule!"));
+    }
+
+    // If we get here, the function has failed. Log the final result.
+    UE_LOG(LogStevesGameSubsystem, Warning, TEXT("Failed to find any matching UInputAction for Name: '%s' after searching all directories."), *Name);
     return nullptr;
 }
 
